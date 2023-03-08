@@ -1,18 +1,41 @@
 #!/usr/bin/env ruby
 
+require 'optparse'
 require 'httpclient'
 
-THREAD_COUNT = 4
-FIRST_ID = 'mHHi0'
-LAST_ID = 'mHHi9'
-COMMAND_TEMPLATE = 'echo ""; wget -nv %<url>s -O %<id>s.%<extension>s'.freeze
+options = {
+  threads: 4,
+  first_id: 'mHHi0',
+  last_id: 'mHHi9',
+  command_template: 'echo ""; wget -nv %<url>s -O %<id>s.%<extension>s'
+}
+
+OptionParser.new do |opts|
+  opts.banner = "Usage: #{File.basename($0)} [options]"
+
+  opts.on('-t', '--threads COUNT', Integer, "Number of threads to use (default: #{options[:threads]})") do |t|
+    options[:threads] = t
+  end
+
+  opts.on('-f', '--first-id ID', "First ID to check (default: #{options[:first_id]})") do |id|
+    options[:first_id] = id
+  end
+
+  opts.on('-l', '--last-id ID', "Last ID to check (default: #{options[:last_id]})") do |id|
+    options[:last_id] = id
+  end
+
+  opts.on('-c', '--command TEMPLATE', "Command template to execute (default: #{options[:command_template]})") do |template|
+    options[:command_template] = template
+  end
+end.parse!
 
 http_client = HTTPClient.new(agent_name: 'Mozilla/5.0 (compatible; Googlebot-Image/1.01; +http://www.google.com/bot.html)')
 http_client.cookie_manager = nil
 
-ids = (FIRST_ID..LAST_ID).to_a
+ids = (options[:first_id]..options[:last_id]).to_a
 
-threads = Array.new(THREAD_COUNT) do
+threads = Array.new(options[:threads]) do
   Thread.new do
     until ids.empty?
       id = ids.pop
@@ -28,7 +51,7 @@ threads = Array.new(THREAD_COUNT) do
       if response.contenttype.split('/')[0] == 'image'
         puts "[+] Status: #{response.status_code} Content-Type: #{response.contenttype} URL: #{url}"
 
-        command = format(COMMAND_TEMPLATE, url: url, id: id, extension: response.contenttype.split('/')[1])
+        command = format(options[:command_template], url: url, id: id, extension: response.contenttype.split('/')[1])
         system(command)
       else
         puts "[-] Status: #{response.status_code} Content-Type: #{response.contenttype} URL: #{url}"

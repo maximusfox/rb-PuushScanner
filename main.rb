@@ -2,51 +2,39 @@
 
 require 'httpclient'
 
-config = {
-  :threads => 4,
-  :first => 'mHHi0',
-  :last => 'mHHi9',
-  :command => 'echo ""; wget -nv %url% -O %id%.%extension%'
-}
+THREAD_COUNT = 4
+FIRST_ID = 'mHHi0'
+LAST_ID = 'mHHi9'
+COMMAND_TEMPLATE = 'echo ""; wget -nv %<url>s -O %<id>s.%<extension>s'.freeze
 
-http_client = HTTPClient.new(
-    :agent_name => 'Mozilla/5.0 (compatible; Googlebot-Image/1.01; +http://www.google.com/bot.html)'
-)
+http_client = HTTPClient.new(agent_name: 'Mozilla/5.0 (compatible; Googlebot-Image/1.01; +http://www.google.com/bot.html)')
 http_client.cookie_manager = nil
 
-targets = (config[:first]...config[:last].next!).to_a
+ids = (FIRST_ID..LAST_ID).to_a
 
-threads_pull = []
-config[:threads].times do
-  threads_pull << Thread.new do
-    until targets.empty?
-      id = targets.pop
-      url = 'http://puu.sh/'+id
+threads = Array.new(THREAD_COUNT) do
+  Thread.new do
+    until ids.empty?
+      id = ids.pop
+      url = "http://puu.sh/#{id}"
       
       begin
-        resp = http_client.head(url)
-      rescue
-        puts 'Status: '+resp.status.to_s+' (error) URL: '+url
+        response = http_client.head(url)
+      rescue HTTPClient::BadResponseError => e
+        puts "Status: #{e.res.status_code} (error) URL: #{url}"
         next
       end
 
+      if response.contenttype.split('/')[0] == 'image'
+        puts "[+] Status: #{response.status_code} Content-Type: #{response.contenttype} URL: #{url}"
 
-      image_type = resp.contenttype.split('/')[1]
-
-      if image_type != 'html'
-        puts '[+] Status: '+resp.status.to_s+' Content-Type: '+resp.contenttype+' URL: '+url
-        shell_command = config[:command].clone
-        shell_command.sub! '%url%', url
-        shell_command.sub! '%id%', id
-        shell_command.sub! '%extension%', image_type
-
-        `#{shell_command}`
+        command = format(COMMAND_TEMPLATE, url: url, id: id, extension: response.contenttype.split('/')[1])
+        system(command)
       else
-        puts '[-] Status: '+resp.status.to_s+' Content-Type: '+resp.contenttype+' URL: '+url
+        puts "[-] Status: #{response.status_code} Content-Type: #{response.contenttype} URL: #{url}"
       end
-
     end
   end
 end
 
-threads_pull.each { |t| t.join }
+threads.each(&:join)
